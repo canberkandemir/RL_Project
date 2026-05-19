@@ -1,13 +1,151 @@
 import argparse
+import csv
 import os
+import time
+from datetime import datetime
 
 import gymnasium as gym
 import numpy as np
-#from stable_baselines3 import 
-import panda_gym  # noqa: F401 - required so Panda envs are registered
+import panda_gym  # required so PandaPush-v3 is registered
+
+from stable_baselines3 import PPO, SAC
 
 
-def evaluate(model_path: str, n_episodes: int, deterministic: bool, render: bool, env_type: str) -> None:
+def load_model(model_path: str, env=None):
+    lower_path = model_path.lower()
+
+    if "ppo" in lower_path:
+        return PPO.load(model_path)
+
+    if "sac" in lower_path:
+        return SAC.load(model_path, env=env)
+
+    raise ValueError(
+        "Could not infer algorithm from model path. "
+        "Please use a filename containing 'ppo' or 'sac'."
+    )
+
+
+def set_object_mass(env, mass: float) -> None:
+    """
+    Manually set the PandaPush cube mass.
+    Used for robustness evaluation across different masses.
+    """
+    sim = env.unwrapped.task.sim
+    object_body_id = sim._bodies_idx["object"]
+
+    sim.physics_client.changeDynamics(
+        bodyUniqueId=object_body_id,
+        linkIndex=-1,
+        mass=float(mass),
+    )
+
+
+def infer_algorithm(model_path: str) -> str:
+    lower_path = model_path.lower()
+
+    if "ppo" in lower_path:
+        return "ppo"
+
+    if "sac" in lower_path:
+        return "sac"
+
+    return "unknown"
+
+
+def infer_sampling_strategy(model_path: str) -> str:
+    lower_path = model_path.lower()
+
+    if "_udr_" in lower_path:
+        return "udr"
+
+    if "_adr_" in lower_path:
+        return "adr"
+
+    if "_none_" in lower_path:
+        return "none"
+
+    if "sac_her" in lower_path or "_her_" in lower_path:
+        return "her"
+
+    return "unknown"
+
+
+def append_results_to_csv(
+    csv_path: str,
+    experiment_name: str,
+    model_path: str,
+    env_type: str,
+    eval_mass,
+    n_episodes: int,
+    deterministic: bool,
+    mean_return: float,
+    std_return: float,
+    min_return: float,
+    max_return: float,
+    success_rate,
+) -> None:
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+
+    file_exists = os.path.exists(csv_path)
+
+    fieldnames = [
+        "timestamp",
+        "experiment_name",
+        "model_name",
+        "model_path",
+        "algorithm",
+        "sampling_strategy",
+        "env_type",
+        "eval_mass",
+        "episodes",
+        "deterministic",
+        "mean_return",
+        "std_return",
+        "min_return",
+        "max_return",
+        "success_rate",
+    ]
+
+    row = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "experiment_name": experiment_name,
+        "model_name": os.path.basename(model_path),
+        "model_path": model_path,
+        "algorithm": infer_algorithm(model_path),
+        "sampling_strategy": infer_sampling_strategy(model_path),
+        "env_type": env_type,
+        "eval_mass": "" if eval_mass is None else eval_mass,
+        "episodes": n_episodes,
+        "deterministic": deterministic,
+        "mean_return": mean_return,
+        "std_return": std_return,
+        "min_return": min_return,
+        "max_return": max_return,
+        "success_rate": "" if success_rate is None else success_rate,
+    }
+
+    with open(csv_path, mode="a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow(row)
+
+
+def evaluate(
+    model_path: str,
+    n_episodes: int,
+    deterministic: bool,
+    render: bool,
+    env_type: str,
+    eval_mass,
+    seed: int,
+    save_csv: bool,
+    csv_path: str,
+    experiment_name: str,
+) -> None:
     if not os.path.exists(model_path):
         raise FileNotFoundError(
             f"Model file not found: {model_path}. "
@@ -15,84 +153,199 @@ def evaluate(model_path: str, n_episodes: int, deterministic: bool, render: bool
         )
 
     render_mode = "human" if render else "rgb_array"
-    env = gym.make("PandaPush-v3", render_mode=render_mode, type=env_type, reward_type="dense")
-    #TODO: load model here
+
+    env = gym.make(
+        "PandaPush-v3",
+        render_mode=render_mode,
+        type=env_type,
+        reward_type="dense",
+    )
+
+    model = load_model(model_path, env=env)
 
     episode_returns = []
     successes = []
+    episode_lengths = []
 
     for episode in range(1, n_episodes + 1):
-        obs, info = env.reset()
+        obs, info = env.reset(seed=seed + episode - 1)
+
+        # If eval_mass is given, override the default source/target cube mass.
+        # We set it after reset because the environment may recreate/reset dynamics.
+        if eval_mass is not None:
+            set_object_mass(env, eval_mass)
+
         terminated = False
         truncated = False
         episode_return = 0.0
+        step = 0
 
         while not (terminated or truncated):
-            action,_ = ... #TODO: get action from the model
+            action, _ = model.predict(obs, deterministic=deterministic)
             obs, reward, terminated, truncated, info = env.step(action)
             episode_return += float(reward)
 
+            if render:
+                env.render()
+                time.sleep(0.03)
+
+            step += 1
+
         episode_returns.append(episode_return)
+        episode_lengths.append(step)
 
         if isinstance(info, dict) and "is_success" in info:
             successes.append(float(info["is_success"]))
 
-        print(f"Episode {episode:03d} | return = {episode_return:.3f}")
+        print(
+            f"Episode {episode:03d} | "
+            f"return = {episode_return:.3f} | "
+            f"steps = {step}"
+        )
+
+    returns = np.array(episode_returns, dtype=np.float32)
+    lengths = np.array(episode_lengths, dtype=np.float32)
+
+    mean_return = float(returns.mean())
+    std_return = float(returns.std())
+    min_return = float(returns.min())
+    max_return = float(returns.max())
+    mean_len = float(lengths.mean())
+
+    success_rate = None
+    if successes:
+        success_rate = float(np.mean(successes))
+
+    print("\n=== Evaluation summary ===")
+    print(f"Experiment name: {experiment_name}")
+    print(f"Model path: {model_path}")
+    print(f"Environment type: {env_type}")
+    print(f"Eval mass override: {eval_mass}")
+    print(f"Seed: {seed}")
+    print(f"Episodes: {n_episodes}")
+    print(f"Deterministic: {deterministic}")
+    print(f"Mean return: {mean_return:.3f}")
+    print(f"Std return:  {std_return:.3f}")
+    print(f"Min return:  {min_return:.3f}")
+    print(f"Max return:  {max_return:.3f}")
+    print(f"Mean episode length: {mean_len:.2f}")
+
+    if success_rate is not None:
+        print(f"Success rate: {success_rate:.2%}")
+
+    if save_csv:
+        append_results_to_csv(
+            csv_path=csv_path,
+            experiment_name=experiment_name,
+            model_path=model_path,
+            env_type=env_type,
+            eval_mass=eval_mass,
+            n_episodes=n_episodes,
+            deterministic=deterministic,
+            mean_return=mean_return,
+            std_return=std_return,
+            min_return=min_return,
+            max_return=max_return,
+            success_rate=success_rate,
+        )
+
+        print(f"\nSaved evaluation row to: {csv_path}")
+
+    if render:
+        input("\nPress Enter to close the PandaPush window...")
 
     env.close()
 
-    returns = np.array(episode_returns, dtype=np.float32)
-    print("\n=== Evaluation summary ===")
-    print(f"Episodes: {n_episodes}")
-    print(f"Mean return: {returns.mean():.3f}")
-    print(f"Std return:  {returns.std():.3f}")
-    print(f"Min return:  {returns.min():.3f}")
-    print(f"Max return:  {returns.max():.3f}")
-
-    if successes:
-        success_rate = float(np.mean(successes))
-        print(f"Success rate: {success_rate:.2%}")
-
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate SAC on PandaPush-v3")
+    parser = argparse.ArgumentParser(description="Evaluate PPO or SAC on PandaPush-v3")
+
     parser.add_argument(
         "--model-path",
         type=str,
         required=True,
-        help="Path to a PPO model zip file (e.g., ppo_panda_push.zip)",
+        help="Path to a PPO/SAC model zip file",
     )
+
     parser.add_argument(
-        "--episodes", 
-        type=int, 
-        default=500, 
-        help="Number of eval episodes"
+        "--episodes",
+        type=int,
+        default=50,
+        help="Number of eval episodes",
     )
+
     parser.add_argument(
         "--stochastic",
         action="store_true",
         help="Use stochastic policy sampling instead of deterministic actions",
     )
+
     parser.add_argument(
         "--render",
         action="store_true",
-        help="Render with a window (render_mode='human')",
+        help="Render with a window",
     )
+
     parser.add_argument(
         "--env-type",
-        type=str, default="target",
+        type=str,
+        default="target",
         choices=["source", "target"],
-        help="Type of environment to evaluate on (default: target)",
+        help="Type of environment to evaluate on",
     )
+
+    parser.add_argument(
+        "--eval-mass",
+        type=float,
+        default=None,
+        help=(
+            "Optional manual object mass override for robustness tests. "
+            "Example: --eval-mass 3.0"
+        ),
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Base seed used for evaluation resets",
+    )
+
+    parser.add_argument(
+        "--save-csv",
+        action="store_true",
+        help="Append evaluation summary to a CSV file",
+    )
+
+    parser.add_argument(
+        "--csv-path",
+        type=str,
+        default="results/eval_results.csv",
+        help="CSV file where evaluation summaries are stored",
+    )
+
+    parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default="manual_eval",
+        help="Name/label for this evaluation experiment",
+    )
+
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
+
     evaluate(
         model_path=args.model_path,
         n_episodes=args.episodes,
         deterministic=not args.stochastic,
         render=args.render,
         env_type=args.env_type,
+        eval_mass=args.eval_mass,
+        seed=args.seed,
+        save_csv=args.save_csv,
+        csv_path=args.csv_path,
+        experiment_name=args.experiment_name,
     )

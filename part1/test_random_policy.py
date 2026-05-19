@@ -1,40 +1,72 @@
-"""Test a random policy on the Gym Hopper environment
+"""Test a random policy on the Gym Hopper environment visually for ~15 seconds."""
 
-    Play around with this code to get familiar with the
-    Hopper environment.
+import time
 
-    For example, what happens if you don't reset the environment
-    even after the episode is over?
-    When exactly is the episode over?
-    What is an action here?
-"""
 import gymnasium as gym
+import mujoco
+
 
 def main():
-    render = False
+    render = True
+    duration_seconds = 15
 
-    if render:
-        env = gym.make('Hopper-v4', render_mode='human')
-    else:
-        env = gym.make('Hopper-v4', render_mode='rgb_array')
-    print('State space:', env.observation_space)  # state-space
-    print('Action space:', env.action_space)  # action-space
+    env = gym.make(
+        "Hopper-v4",
+        render_mode="human" if render else "rgb_array",
+    )
 
-    n_episodes = 50
+    print("State space:", env.observation_space)
+    print("Action space:", env.action_space)
 
-    for ep in range(n_episodes):  
+    model = env.unwrapped.model
+
+    body_names = [
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, i)
+        for i in range(model.nbody)
+    ]
+
+    print("Body names:", body_names)
+    print("Body masses:", model.body_mass)
+    print("Number of bodies:", model.nbody)
+    print("Number of DoFs nv:", model.nv)
+    print("Body DoF numbers:", model.body_dofnum)
+    print("Number of actuators nu:", model.nu)
+
+    start_time = time.time()
+    episode = 0
+
+    while time.time() - start_time < duration_seconds:
         done = False
-        state, info = env.reset()  # Reset environment to initial state
+        step = 0
+        state, info = env.reset()
 
-        while not done:  # Until the episode is over
-            action = env.action_space.sample()  # Sample random action
+        print("\nEpisode:", episode)
+        print("Initial state shape:", state.shape)
 
-            state, reward, terminated, truncated, _ = env.step(action)  # Step the simulator to the next timestep
+        while not done and time.time() - start_time < duration_seconds:
+            action = env.action_space.sample()
+
+            state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
-            if render:
-                env.render()
+            if step < 5:
+                print("\nStep:", step)
+                print("Action:", action)
+                print("Reward:", reward)
+                print("Terminated:", terminated)
+                print("Truncated:", truncated)
+
+            env.render()
+            time.sleep(0.03)
+
+            step += 1
+
+        print("Episode ended after", step, "steps")
+        episode += 1
+
+    input("\n15 seconds finished. Press Enter to close the Hopper window...")
+    env.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

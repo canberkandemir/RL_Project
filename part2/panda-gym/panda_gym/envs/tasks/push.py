@@ -14,7 +14,7 @@ class Push(Task):
         distance_threshold=0.05,
         goal_xy_range=0.1,
         obj_xy_range=0.2,
-        type="source"
+        type="source",
     ) -> None:
         super().__init__(sim)
         self.reward_type = reward_type
@@ -29,7 +29,6 @@ class Push(Task):
         with self.sim.no_rendering():
             self._create_scene()
 
-
     def _create_scene(self) -> None:
         self.sim.create_plane(z_offset=-0.4)
         self.sim.create_table(length=1.1, width=0.7, height=0.4, x_offset=-0.3)
@@ -40,14 +39,17 @@ class Push(Task):
             position=np.array([0.0, 0.0, self.object_size / 2]),
             rgba_color=np.array([0.1, 0.9, 0.1, 1.0]),
         )
-        print("Created object with mass:", self.current_mass)
         self.sim.create_box(
             body_name="target",
-            half_extents=np.ones(3) * self.object_size / 2,
+            half_extents=np.array([
+                self.object_size * 0.65,
+                self.object_size * 0.65,
+                0.001,
+            ]),
             mass=0.0,
             ghost=True,
-            position=np.array([0.0, 0.0, self.object_size / 2]),
-            rgba_color=np.array([0.1, 0.9, 0.1, 0.3]),
+            position=np.array([0.0, 0.0, 0.001]),
+            rgba_color=np.array([0.1, 0.3, 1.0, 0.65]),
         )
 
     def get_obs(self) -> np.ndarray:
@@ -71,21 +73,18 @@ class Push(Task):
         return object_position
 
     def reset(self) -> None:
-        # sample mass 
         self.goal = self._sample_goal()
         object_position = self._sample_object()
-        self.sim.set_base_pose("target", self.goal, np.array([0.0, 0.0, 0.0, 1.0]))
+        target_visual_position = self.goal.copy()
+        target_visual_position[2] = 0.001
+        self.sim.set_base_pose("target", target_visual_position, np.array([0.0, 0.0, 0.0, 1.0]))
         self.sim.set_base_pose("object", object_position, np.array([0.0, 0.0, 0.0, 1.0]))
 
     def _sample_goal(self) -> np.ndarray:
-        """Randomize goal."""
-        goal = np.array([0.0, 0.0, self.object_size / 2])  # z offset for the cube center
-        #noise = self.np_random.uniform(self.goal_range_low, self.goal_range_high)
-        #goal += noise
+        goal = np.array([0.0, 0.0, self.object_size / 2])
         return goal
 
     def _sample_object(self) -> np.ndarray:
-        """Randomize start position of object."""
         object_position = np.array([0.0, 0.0, self.object_size / 2])
         noise = self.np_random.uniform(self.obj_range_low, self.obj_range_high)
         object_position += noise
