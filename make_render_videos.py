@@ -16,6 +16,7 @@ import torch
 OUT = ROOT / "renders"
 SIZE = (1280, 720)
 FPS = 30
+PUSH_VISUAL_SUCCESS_DISTANCE_THRESHOLD = 0.005
 
 sys.path.insert(0, str(ROOT / "part1"))
 sys.path.insert(0, str(ROOT / "part2"))
@@ -252,7 +253,7 @@ def render_hopper_ppo(writers, preview_frames, seconds):
 
 
 def make_push_env(env_type):
-    return gym.make(
+    env = gym.make(
         "PandaPush-v3",
         render_mode="rgb_array",
         type=env_type,
@@ -260,6 +261,8 @@ def make_push_env(env_type):
         render_width=SIZE[0],
         render_height=SIZE[1],
     )
+    env.unwrapped.task.distance_threshold = PUSH_VISUAL_SUCCESS_DISTANCE_THRESHOLD
+    return env
 
 
 def load_sb3_model(model_path, env):
@@ -275,7 +278,7 @@ def goal_distance(obs):
     return float(np.linalg.norm(achieved - desired))
 
 
-def render_push_clip(writers, preview_frames, title, model_path, env_type, seed, max_steps=50):
+def render_push_clip(writers, preview_frames, title, model_path, env_type, seed, max_steps=60):
     detail = f"{env_type} environment | {Path(model_path).name}"
     write_title(writers, title, detail)
 
@@ -473,7 +476,7 @@ def main():
             "Part 2 SAC+HER: target to target",
             ROOT / "part2" / "models" / "sac_her_push_target_500k_seed42.zip",
             "target",
-            9000,
+            280,
         ),
         (
             "part2_sac_her_udr_target",
