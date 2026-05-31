@@ -1,15 +1,9 @@
-"""Test a random policy on the Gym Hopper environment
+"""Test a random policy on PandaPush-v3."""
 
-    Play around with this code to get familiar with the
-    Hopper environment.
-
-    For example, what happens if you don't reset the environment
-    even after the episode is over?
-    When exactly is the episode over?
-    What is an action here?
-"""
 import gymnasium as gym
-import panda_gym # type: ignore[import-not-found]
+import panda_gym  # required so PandaPush-v3 is registered
+
+
 def main():
     render = False
 
@@ -19,25 +13,27 @@ def main():
         type="target",
         reward_type="dense",
     )
-    
-    print('State space:', env.observation_space)  # state-space
-    print('Action space:', env.action_space)  # action-space
+
+    print("State space:", env.observation_space)
+    print("Action space:", env.action_space)
 
     n_episodes = 5
 
-    for ep in range(n_episodes):  
+    for _ in range(n_episodes):
         done = False
-        state, info = env.reset()  # Reset environment to initial state
+        state, info = env.reset()
 
-        while not done:  # Until the episode is over
-            action = env.action_space.sample()  # Sample random action
+        while not done:
+            action = env.action_space.sample()
 
-            state, reward, terminated, truncated, _ = env.step(action)  # Step the simulator to the next timestep
+            state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
             if render:
                 env.render()
 
+    env.close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

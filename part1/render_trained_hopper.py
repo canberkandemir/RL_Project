@@ -1,8 +1,4 @@
-"""Render the required from-scratch Actor-Critic policy on Hopper-v4.
-
-This model is useful for the Part 1 course comparison, but it does not learn
-the strong forward-hopping gait shown by the PPO demo model.
-"""
+"""Render the required from-scratch Actor-Critic policy on Hopper-v4."""
 
 import time
 import argparse
@@ -59,15 +55,33 @@ def main():
     parser.add_argument("--sim-steps-per-render", type=int, default=3)
     parser.add_argument("--action-scale", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--hidden-size", type=int, default=256)
+    parser.add_argument("--init-sigma", type=float, default=0.5)
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Use the policy mean. This is the default for the submitted Actor-Critic policy.",
+    )
+    parser.add_argument(
+        "--stochastic",
+        action="store_true",
+        help="Sample from the learned stochastic policy instead of using the deterministic mean.",
+    )
     args = parser.parse_args()
+    torch.manual_seed(args.seed)
 
     env = gym.make("Hopper-v4", render_mode="human")
 
     state_space = env.observation_space.shape[0]
     action_space = env.action_space.shape[0]
 
-    policy = Policy(state_space, action_space)
-    policy.load_state_dict(torch.load(args.model_path, map_location="cpu"))
+    policy = Policy(
+        state_space,
+        action_space,
+        hidden_size=args.hidden_size,
+        init_sigma=args.init_sigma,
+    )
+    policy.load_state_dict(torch.load(args.model_path, map_location="cpu"), strict=False)
     policy.eval()
 
     agent = Agent(policy, algorithm="actor_critic", baseline=None)
@@ -77,6 +91,8 @@ def main():
     print("Sim steps per render:", args.sim_steps_per_render)
     print("Action scale:", args.action_scale)
     print("Sleep time:", args.sleep_time)
+    use_deterministic = args.deterministic or not args.stochastic
+    print("Action mode:", "deterministic mean" if use_deterministic else "stochastic sample")
 
     start_time = time.time()
     episode = 0
@@ -96,7 +112,7 @@ def main():
                     break
 
                 with torch.no_grad():
-                    action, _ = agent.get_action(state, evaluation=True)
+                    action, _ = agent.get_action(state, evaluation=use_deterministic)
 
                 action_np = args.action_scale * action.detach().cpu().numpy()
                 action_np = np.clip(action_np, env.action_space.low, env.action_space.high)

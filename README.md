@@ -12,59 +12,50 @@ pip install -e .
 
 ## Part 1: Hopper-v4
 
-Required from-scratch experiments:
+Required from-scratch experiments only:
 
 ```bash
 cd part1
 python test_random_policy.py
 python train.py
+python train.py --algorithm actor_critic --actor-critic-mode rollout --timesteps 2000000 --hidden-size 256 --normalize-observations --squash-action-mean --rollout-steps 64 --n-envs 12
 python evaluate_required_actor_critic_hopper.py
 python render_required_actor_critic_hopper.py
 ```
 
-Extra PPO visual demo, kept separate from the required algorithms:
-
-```bash
-cd part1
-python train_ppo_hopper.py
-python render_ppo_hopper.py
-```
+The second training command runs the tuned rollout Actor-Critic configuration
+used for the submitted model and render.
 
 Main outputs:
 
 - `part1/part1_summary.csv`
 - `part1/part1_comparison_learning_curve.png`
 - `part1/best_actor_critic_policy.pth`
-- `part1/models/ppo_hopper_500k.zip`
 
 ## Part 2: PandaPush-v3
 
-PPO/SAC training with fixed, UDR, or ADR cube mass:
+Required PPO/SAC training with fixed cube mass:
 
 ```bash
 cd part2
 python train_sb3.py --algo ppo --env-type source --sampling-strategy none --timesteps 200000
+python train_sb3.py --algo ppo --env-type target --sampling-strategy none --timesteps 200000
+python train_sb3.py --algo sac --env-type source --sampling-strategy none --timesteps 200000
+python train_sb3.py --algo sac --env-type target --sampling-strategy none --timesteps 200000
+python train_sb3.py --algo sac --env-type target --sampling-strategy none --timesteps 120000 --load-model-path models/sac_push_none_target_260k_lr0p0003_g0p95_buf100000_b256_fixed_seed42.zip --run-name sac_push_none_target_380k_lr0p0003_g0p95_buf100000_b256_fixed_seed42 --quiet
+python eval_sb3.py --model-path models/MODEL_NAME.zip --env-type target --episodes 50 --save-csv
+```
+
+The submitted domain-randomization experiments use the required PPO and SAC
+implementations with UDR and ADR:
+
+```bash
+cd part2
 python train_sb3.py --algo ppo --env-type source --sampling-strategy udr --timesteps 200000
 python train_sb3.py --algo ppo --env-type source --sampling-strategy adr --timesteps 200000
-python eval_sb3.py --model-path models/MODEL_NAME.zip --env-type target --episodes 50 --save-csv
+python train_sb3.py --algo sac --env-type source --sampling-strategy udr --timesteps 200000 --mass-min 0.5 --mass-max 5.0 --run-name sac_push_udr_source_200k_lr0p0003_g0p95_buf100000_b256_m0p5-5p0_seed0 --quiet
+python train_sb3.py --algo sac --env-type source --sampling-strategy adr --timesteps 200000 --mass-min 0.5 --adr-max-limit 5.0 --adr-initial-min 0.8 --adr-initial-max 1.2 --adr-step 0.3 --adr-success-threshold 0.25 --adr-window-size 10 --run-name sac_push_adr_source_200k_lr0p0003_g0p95_buf100000_b256_init0p8-1p2_lim0p5-5p0_step0p3_thr0p25_win10_seed0 --quiet
 python plot_results.py
-```
-
-Stronger SAC+HER PandaPush policy:
-
-```bash
-cd part2
-python train_sac_her_pandapush.py --env-type source --timesteps 500000
-python train_sac_her_pandapush.py --env-type target --timesteps 500000
-python render_sac_her_clean_demo.py
-python save_sac_her_clean_demo_video.py
-```
-
-Final SAC+HER domain-randomization run:
-
-```bash
-cd part2
-python run_sac_her_dr_experiments.py
 ```
 
 Main outputs:
@@ -73,19 +64,20 @@ Main outputs:
 - `part2/results/domain_randomization_target_barplot.png`
 - `part2/results/mean_return_barplot.png`
 - `part2/results/mass_robustness_curve.png`
-- `part2/results/sac_her_lower_upper_success_barplot.png`
-- `part2/results/pandapush_centered_demo_seed280.mp4`
+- `part2/results/lower_upper_success_barplot.png`
+- `renders/part2_sac_target_380k_seed51_start_finish.png`
+- `renders/part2_sac_udr_source_200k_target_seed53_start_finish.png`
 
 ## Report Assets
 
-After experiments finish, collect report-ready tables, plots, and demo frames:
+After experiments finish, collect report-ready tables, plots, and render images:
 
 ```bash
 python make_report_assets.py
 ```
 
 The PNG files are written to `report_assets/`, including summary tables,
-comparison plots, and start/finish frames from the PandaPush demo video.
+comparison plots, and the required Part 2 result plots.
 
 ## Project Structure
 
@@ -99,16 +91,11 @@ FAIML-RL-26/
 │   ├── test_random_policy.py
 │   ├── train.py
 │   ├── evaluate_required_actor_critic_hopper.py
-│   ├── render_required_actor_critic_hopper.py
-│   └── render_ppo_hopper.py
+│   └── render_required_actor_critic_hopper.py
 └── part2/
     ├── eval_sb3.py
     ├── plot_results.py
     ├── rand_wrapper.py
-    ├── render_sac_her_clean_demo.py
-    ├── run_sac_her_dr_experiments.py
-    ├── save_sac_her_clean_demo_video.py
-    ├── train_sac_her_pandapush.py
     ├── train_sb3.py
     └── panda-gym/
 ```

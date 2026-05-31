@@ -65,9 +65,6 @@ def infer_sampling_strategy(model_path: str) -> str:
     if "_none_" in lower_path:
         return "none"
 
-    if "sac_her" in lower_path or "_her_" in lower_path:
-        return "her"
-
     return "unknown"
 
 
@@ -139,6 +136,9 @@ def evaluate(
     n_episodes: int,
     deterministic: bool,
     render: bool,
+    render_sleep: float,
+    start_hold: float,
+    end_hold: float,
     env_type: str,
     eval_mass,
     seed: int,
@@ -166,9 +166,21 @@ def evaluate(
     episode_returns = []
     successes = []
     episode_lengths = []
+    start_distances = []
+    final_distances = []
+    object_moves = []
 
     for episode in range(1, n_episodes + 1):
         obs, info = env.reset(seed=seed + episode - 1)
+        start_achieved_goal = np.array(obs["achieved_goal"], dtype=np.float32)
+        desired_goal = np.array(obs["desired_goal"], dtype=np.float32)
+        start_distance = float(np.linalg.norm(start_achieved_goal - desired_goal))
+
+        if render and start_hold > 0:
+            hold_until = time.time() + start_hold
+            while time.time() < hold_until:
+                env.render()
+                time.sleep(0.03)
 
         # If eval_mass is given, override the default source/target cube mass.
         # We set it after reset because the environment may recreate/reset dynamics.
@@ -187,12 +199,24 @@ def evaluate(
 
             if render:
                 env.render()
-                time.sleep(0.03)
+                time.sleep(render_sleep)
 
             step += 1
 
+        if render and end_hold > 0:
+            hold_until = time.time() + end_hold
+            while time.time() < hold_until:
+                env.render()
+                time.sleep(0.03)
+
         episode_returns.append(episode_return)
         episode_lengths.append(step)
+        final_achieved_goal = np.array(obs["achieved_goal"], dtype=np.float32)
+        final_distance = float(np.linalg.norm(final_achieved_goal - desired_goal))
+        object_move = float(np.linalg.norm(final_achieved_goal - start_achieved_goal))
+        start_distances.append(start_distance)
+        final_distances.append(final_distance)
+        object_moves.append(object_move)
 
         if isinstance(info, dict) and "is_success" in info:
             successes.append(float(info["is_success"]))
@@ -200,11 +224,17 @@ def evaluate(
         print(
             f"Episode {episode:03d} | "
             f"return = {episode_return:.3f} | "
-            f"steps = {step}"
+            f"steps = {step} | "
+            f"start_dist = {start_distance:.3f} | "
+            f"final_dist = {final_distance:.3f} | "
+            f"object_move = {object_move:.3f}"
         )
 
     returns = np.array(episode_returns, dtype=np.float32)
     lengths = np.array(episode_lengths, dtype=np.float32)
+    start_distances = np.array(start_distances, dtype=np.float32)
+    final_distances = np.array(final_distances, dtype=np.float32)
+    object_moves = np.array(object_moves, dtype=np.float32)
 
     mean_return = float(returns.mean())
     std_return = float(returns.std())
@@ -229,6 +259,9 @@ def evaluate(
     print(f"Min return:  {min_return:.3f}")
     print(f"Max return:  {max_return:.3f}")
     print(f"Mean episode length: {mean_len:.2f}")
+    print(f"Mean start distance: {start_distances.mean():.3f}")
+    print(f"Mean final distance: {final_distances.mean():.3f}")
+    print(f"Mean object movement: {object_moves.mean():.3f}")
 
     if success_rate is not None:
         print(f"Success rate: {success_rate:.2%}")
@@ -287,6 +320,27 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--render-sleep",
+        type=float,
+        default=0.03,
+        help="Seconds to wait after each rendered environment step",
+    )
+
+    parser.add_argument(
+        "--start-hold",
+        type=float,
+        default=0.0,
+        help="Seconds to hold the initial rendered state before acting",
+    )
+
+    parser.add_argument(
+        "--end-hold",
+        type=float,
+        default=0.0,
+        help="Seconds to hold the final rendered state before closing",
+    )
+
+    parser.add_argument(
         "--env-type",
         type=str,
         default="target",
@@ -342,6 +396,9 @@ if __name__ == "__main__":
         n_episodes=args.episodes,
         deterministic=not args.stochastic,
         render=args.render,
+        render_sleep=args.render_sleep,
+        start_hold=args.start_hold,
+        end_hold=args.end_hold,
         env_type=args.env_type,
         eval_mass=args.eval_mass,
         seed=args.seed,

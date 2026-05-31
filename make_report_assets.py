@@ -4,7 +4,6 @@ from pathlib import Path
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path(__file__).resolve().parent / ".mplconfig"))
 
-import cv2
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -26,22 +25,26 @@ def fmt(value):
 
 
 def label_for(name):
-    if "sac_her_udr" in name:
-        return "SAC+HER UDR [0.5, 5.0]"
-    if "sac_her_adr" in name:
-        return "SAC+HER ADR"
-    if "sac_her_source_to_source" in name:
-        return "SAC+HER source to source"
-    if "sac_her_source_to_target" in name:
-        return "SAC+HER source to target"
-    if "sac_her_target_to_target" in name:
-        return "SAC+HER target to target"
     if "ppo_none_source_to_source" in name:
         return "PPO source to source"
     if "ppo_none_source_to_target" in name:
         return "PPO source to target"
     if "ppo_none_target_to_target" in name:
         return "PPO target to target"
+    if "sac_none_source_to_source" in name:
+        return "SAC source to source"
+    if "sac_none_source_to_target" in name:
+        return "SAC source to target"
+    if "sac_none_target_to_target" in name:
+        return "SAC target to target"
+    if "ppo_udr" in name:
+        return "PPO UDR"
+    if "ppo_adr" in name:
+        return "PPO ADR"
+    if "sac_udr" in name:
+        return "SAC UDR"
+    if "sac_adr" in name:
+        return "SAC ADR"
     if "udr_v2" in name:
         return "PPO UDR [0.8, 3.0]"
     if "udr_v3" in name:
@@ -86,36 +89,14 @@ def copy_graphs():
         ROOT / "part2" / "results" / "domain_randomization_target_barplot.png": OUT / "part2_dr_target_success.png",
         ROOT / "part2" / "results" / "mean_return_barplot.png": OUT / "part2_dr_mean_return.png",
         ROOT / "part2" / "results" / "mass_robustness_curve.png": OUT / "part2_mass_robustness_curve.png",
-        ROOT / "part2" / "results" / "sac_her_lower_upper_success_barplot.png": OUT / "part2_sac_her_lower_upper.png",
+        ROOT / "part2" / "results" / "lower_upper_success_barplot.png": OUT / "part2_lower_upper_success.png",
+        ROOT / "renders" / "part2_sac_target_380k_seed51_start_finish.png": OUT / "part2_sac_target_380k_seed51_start_finish.png",
+        ROOT / "renders" / "part2_sac_udr_source_200k_target_seed53_start_finish.png": OUT / "part2_sac_udr_source_200k_target_seed53_start_finish.png",
     }
 
     for src, dst in copies.items():
         if src.exists():
             shutil.copy2(src, dst)
-
-
-def save_demo_frames():
-    video_path = ROOT / "part2" / "results" / "pandapush_centered_demo_seed280.mp4"
-    if not video_path.exists():
-        return
-
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        return
-
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_ids = {
-        "part2_demo_start.png": min(10, max(total - 1, 0)),
-        "part2_demo_finish.png": max(total - 10, 0),
-    }
-
-    for filename, frame_id in frame_ids.items():
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_id)
-        ok, frame = cap.read()
-        if ok:
-            cv2.imwrite(str(OUT / filename), frame)
-
-    cap.release()
 
 
 def part1_table():
@@ -130,6 +111,8 @@ def part1_table():
             "Avg reward": df["avg_reward"].map(fmt),
             "Final avg 10": df["final_avg_10"].map(fmt),
             "Final avg 50": df["final_avg_50"].map(fmt),
+            "Final x": df["final_avg_x_delta_50"].map(fmt),
+            "Best x": df["best_x_delta"].map(fmt),
             "Time (s)": df["elapsed_time_sec"].map(lambda x: f"{float(x):.2f}"),
         }
     )
@@ -150,7 +133,7 @@ def part2_tables():
     lower_upper = df[
         df["experiment_name"].str.contains(
             "ppo_none_source_to_source|ppo_none_source_to_target|ppo_none_target_to_target|"
-            "sac_her_source_to_source|sac_her_source_to_target|sac_her_target_to_target",
+            "sac_none_source_to_source|sac_none_source_to_target|sac_none_target_to_target",
             regex=True,
         )
     ]
@@ -171,7 +154,7 @@ def part2_tables():
         (df["env_type"] == "target")
         & (df["eval_mass"].isna())
         & df["experiment_name"].str.contains(
-            "udr_v2|udr_v3|adr_v2|sac_her_udr|sac_her_adr",
+            "udr_v2|udr_v3|adr_v2|ppo_udr|ppo_adr|sac_udr|sac_adr",
             regex=True,
         )
     ]
@@ -191,7 +174,7 @@ def part2_tables():
     mass_df = df[
         df["eval_mass"].notna()
         & df["experiment_name"].str.contains(
-            "udr_v2|udr_v3|adr_v2|sac_her_udr|sac_her_adr",
+            "udr_v2|udr_v3|adr_v2|ppo_udr|ppo_adr|sac_udr|sac_adr",
             regex=True,
         )
     ]
@@ -213,7 +196,6 @@ def main():
     part1_table()
     part2_tables()
     copy_graphs()
-    save_demo_frames()
 
     print("Report assets written to:", OUT)
 

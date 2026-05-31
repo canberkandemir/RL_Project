@@ -8,6 +8,7 @@ import panda_gym  # required so PandaPush-v3 is registered
 import torch
 
 from stable_baselines3 import PPO, SAC
+from stable_baselines3.common.logger import configure
 from stable_baselines3.common.monitor import Monitor
 
 from rand_wrapper import RandomizationWrapper
@@ -169,6 +170,32 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--load-model-path",
+        type=str,
+        default=None,
+        help="Optional PPO/SAC checkpoint to continue training from",
+    )
+
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default=None,
+        help="Optional exact run name used for logs and model saving",
+    )
+
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Reduce Stable-Baselines3 training logs",
+    )
+
+    parser.add_argument(
+        "--progress-bar",
+        action="store_true",
+        help="Show the Stable-Baselines3 progress bar",
+    )
+
+    parser.add_argument(
         "--use-wandb",
         action="store_true",
         help="Use Weights & Biases for experiment tracking",
@@ -255,14 +282,27 @@ def main() -> None:
         f"{args.timesteps // 1000}k_"
         f"{hp_tag}_{rand_tag}_seed{args.seed}"
     )
+    if args.run_name is not None:
+        run_name = args.run_name
 
     save_name = f"models/{run_name}"
 
-    if args.algo == "ppo":
+    model_verbose = 0 if args.quiet else 1
+
+    if args.load_model_path is not None:
+        if args.algo == "ppo":
+            model = PPO.load(args.load_model_path, env=env)
+        else:
+            model = SAC.load(args.load_model_path, env=env)
+        model.verbose = model_verbose
+        if args.quiet:
+            model.set_logger(configure(folder=None, format_strings=[]))
+
+    elif args.algo == "ppo":
         model = PPO(
             policy="MultiInputPolicy",
             env=env,
-            verbose=1,
+            verbose=model_verbose,
             learning_rate=args.learning_rate,
             n_steps=args.ppo_n_steps,
             batch_size=args.ppo_batch_size,
@@ -275,7 +315,7 @@ def main() -> None:
         model = SAC(
             policy="MultiInputPolicy",
             env=env,
-            verbose=1,
+            verbose=model_verbose,
             learning_rate=args.learning_rate,
             buffer_size=args.sac_buffer_size,
             batch_size=args.sac_batch_size,
@@ -316,6 +356,8 @@ def main() -> None:
 
     print("Save path:", save_name)
     print("Use WandB:", args.use_wandb)
+    if args.load_model_path is not None:
+        print("Continuing from:", args.load_model_path)
 
     callback = None
     wandb_run = None
@@ -361,7 +403,8 @@ def main() -> None:
 
     model.learn(
         total_timesteps=args.timesteps,
-        progress_bar=True,
+        progress_bar=args.progress_bar,
+        reset_num_timesteps=args.load_model_path is None,
         tb_log_name=run_name,
         callback=callback,
     )
