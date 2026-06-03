@@ -38,13 +38,19 @@ def label_for(name):
     if "sac_none_target_to_target" in name:
         return "SAC target to target"
     if "ppo_udr" in name:
-        return "PPO UDR"
+        return "PPO UDR 200k"
     if "ppo_adr" in name:
-        return "PPO ADR"
+        return "PPO ADR 200k"
+    if "sac_udr_500k" in name:
+        return "SAC UDR 500k"
+    if "sac_adr_500k" in name:
+        return "SAC ADR 500k"
+    if "sac_adr_200k_conservative" in name:
+        return "SAC ADR 200k"
     if "sac_udr" in name:
-        return "SAC UDR"
+        return "SAC UDR 200k"
     if "sac_adr" in name:
-        return "SAC ADR"
+        return "SAC ADR 200k (orig.)"
     if "udr_v2" in name:
         return "PPO UDR [0.8, 3.0]"
     if "udr_v3" in name:
@@ -99,12 +105,69 @@ def copy_graphs():
             shutil.copy2(src, dst)
 
 
+def compute_part1_summary():
+    """
+    Derive Part 1 summary metrics directly from part1_results.csv so that
+    the table is always consistent with the actual training data, regardless
+    of what is stored in part1_summary.csv.
+    """
+    import numpy as np
+
+    results_path = ROOT / "part1" / "part1_results.csv"
+    summary_path = ROOT / "part1" / "part1_summary.csv"
+
+    if not results_path.exists():
+        return None
+
+    results = pd.read_csv(results_path)
+
+    experiments = [
+        ("reinforce_no_baseline",  "reinforce", None),
+        ("reinforce_baseline_10.0","reinforce", 10.0),
+        ("reinforce_baseline_20.0","reinforce", 20.0),
+        ("reinforce_baseline_50.0","reinforce", 50.0),
+        ("actor_critic",           "actor_critic", None),
+    ]
+
+    # Preserve elapsed_time_sec from summary if available
+    elapsed = {}
+    if summary_path.exists():
+        s = pd.read_csv(summary_path)
+        for _, row in s.iterrows():
+            exp = row["experiment"]
+            t   = row.get("elapsed_time_sec", None)
+            if pd.notna(t):
+                elapsed[exp] = float(t)
+
+    rows = []
+    for name, algo, baseline in experiments:
+        if name not in results.columns:
+            continue
+        r  = results[name].values
+        xd = results.get(f"{name}_x_delta", pd.Series([float("nan")] * len(r))).values
+        rows.append({
+            "experiment":            name,
+            "algorithm":             algo,
+            "baseline":              baseline,
+            "episodes":              len(r),
+            "seed":                  42,
+            "avg_reward":            float(np.mean(r)),
+            "final_avg_10":          float(np.mean(r[-10:])),
+            "final_avg_50":          float(np.mean(r[-50:])),
+            "final_avg_x_delta_50":  float(np.mean(xd[-50:])),
+            "best_x_delta":          float(np.max(xd)),
+            "elapsed_time_sec":      elapsed.get(name, None),
+        })
+
+    return pd.DataFrame(rows)
+
+
 def part1_table():
-    csv_path = ROOT / "part1" / "part1_summary.csv"
-    if not csv_path.exists():
+    summary = compute_part1_summary()
+    if summary is None:
         return
 
-    df = pd.read_csv(csv_path)
+    df = summary
     table = pd.DataFrame(
         {
             "Experiment": df["experiment"],
@@ -113,7 +176,9 @@ def part1_table():
             "Final avg 50": df["final_avg_50"].map(fmt),
             "Final x": df["final_avg_x_delta_50"].map(fmt),
             "Best x": df["best_x_delta"].map(fmt),
-            "Time (s)": df["elapsed_time_sec"].map(lambda x: f"{float(x):.2f}"),
+            "Time (s)": df["elapsed_time_sec"].map(
+                lambda x: f"{float(x):.2f}" if pd.notna(x) else "—"
+            ),
         }
     )
     save_table(table, "Part 1: Hopper training summary", OUT / "part1_summary_table.png")
@@ -129,6 +194,7 @@ def part2_tables():
     df["mean_return"] = pd.to_numeric(df["mean_return"], errors="coerce")
     df["eval_mass"] = pd.to_numeric(df["eval_mass"], errors="coerce")
     df["label"] = df["experiment_name"].map(label_for)
+    df = df[~df["label"].str.contains("orig\.", na=False)]
 
     lower_upper = df[
         df["experiment_name"].str.contains(

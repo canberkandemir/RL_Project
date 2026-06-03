@@ -1,5 +1,12 @@
-gymnasium
-mujoco
+gymnasium[mujoco]
+mujoco==3.8.1
 stable-baselines3[extra]>=2.0.0
 imageio
 opencv-python<4
+torch>=2.3.0
+pillow>=9.0.0
+
+# NOTE: pybullet must be installed via conda on macOS (Apple Silicon):
+#   conda install -c conda-forge pybullet
+# PandaPush-v3 (panda-gym) is installed separately:
+#   cd part2/panda-gym && pip install -e .
