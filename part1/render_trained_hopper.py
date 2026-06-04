@@ -11,6 +11,12 @@ import torch
 from agent import Policy, Agent
 
 
+def reset_env(env, seed: int):
+    env.action_space.seed(seed)
+    env.observation_space.seed(seed)
+    return env.reset(seed=seed)
+
+
 def set_follow_camera(env):
     try:
         env.render()
@@ -98,7 +104,7 @@ def main():
     episode = 0
 
     while time.time() - start_time < args.duration:
-        state, info = env.reset(seed=args.seed + episode)
+        state, info = reset_env(env, args.seed + episode)
         done = False
         total_reward = 0.0
         steps = 0

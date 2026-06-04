@@ -15,6 +15,7 @@ class RandomizationWrapper(gym.Wrapper):
         adr_success_threshold=0.7,
         adr_window_size=20,
         verbose=False,
+        seed=None,
     ):
         super().__init__(env)
 
@@ -35,6 +36,7 @@ class RandomizationWrapper(gym.Wrapper):
         self.last_sample_type = "none"
         self.mass_min = self.mass_min_limit
         self.mass_max = self.mass_max_limit
+        self.rng = np.random.default_rng(seed)
 
     def _sample_mass(self):
         if self.mode == "none":
@@ -45,13 +47,13 @@ class RandomizationWrapper(gym.Wrapper):
             self.mass_min = self.mass_min_limit
             self.mass_max = self.mass_max_limit
             self.last_sample_type = "uniform"
-            return np.random.uniform(self.mass_min, self.mass_max)
+            return self.rng.uniform(self.mass_min, self.mass_max)
 
         if self.mode == "adr":
             self.mass_min = self.adr_mass_min
             self.mass_max = self.adr_mass_max
             self.last_sample_type = "adaptive"
-            return np.random.uniform(self.adr_mass_min, self.adr_mass_max)
+            return self.rng.uniform(self.adr_mass_min, self.adr_mass_max)
 
         raise NotImplementedError(f"Sampling strategy '{self.mode}' is not implemented.")
 

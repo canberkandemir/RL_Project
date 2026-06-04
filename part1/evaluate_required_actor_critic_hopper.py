@@ -9,6 +9,12 @@ import torch
 from agent import Agent, Policy
 
 
+def reset_env(env, seed: int):
+    env.action_space.seed(seed)
+    env.observation_space.seed(seed)
+    return env.reset(seed=seed)
+
+
 def evaluate(model_path, episodes, seed, hidden_size, init_sigma, deterministic):
     env = gym.make("Hopper-v4")
 
@@ -26,7 +32,7 @@ def evaluate(model_path, episodes, seed, hidden_size, init_sigma, deterministic)
     x_deltas = []
 
     for episode in range(episodes):
-        state, info = env.reset(seed=seed + episode)
+        state, info = reset_env(env, seed + episode)
         terminated = False
         truncated = False
         total_reward = 0.0

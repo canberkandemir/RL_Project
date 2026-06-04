@@ -4,11 +4,39 @@ Course project for FAIML - 01VSDWS.
 
 ## Getting Started
 
+For reproducible Hopper-v4 results, use Python 3.10 and install the pinned
+versions in `requirements.txt`:
+
 ```bash
-pip install -r requirements.txt
+conda env create -f environment.yml
+conda activate faiml-rl
+```
+
+Then install the local PandaPush package used by Part 2:
+
+```bash
 cd part2/panda-gym
 pip install -e .
 ```
+
+The submitted Part 1 run used `mujoco==3.8.1` and `gymnasium==1.2.3`.
+MuJoCo physics changes across versions can change Hopper-v4 learning curves
+even when the seed is fixed, so rerun Part 1 from a clean environment if these
+versions differ. New `part1/train.py` runs also write the runtime versions into
+`part1_summary.csv` and the full command/config into
+`part1_run_metadata.json`.
+
+Check the simulator stack before comparing results:
+
+```bash
+python -c "import gymnasium, mujoco; print(gymnasium.__version__, mujoco.__version__)"
+```
+
+For closest reruns, start from a fresh env and compare runs only when the
+metadata files show the same Python, Gymnasium, MuJoCo, NumPy, and Torch
+versions. RL training can still vary slightly across hardware/BLAS backends, so
+the saved results should be treated as reproducible under the pinned stack, not
+portable across arbitrary simulator versions.
 
 ## Part 1: Hopper-v4
 
@@ -18,13 +46,13 @@ Required from-scratch experiments only:
 cd part1
 python test_random_policy.py
 python train.py
-python train.py --algorithm actor_critic --actor-critic-mode rollout --timesteps 2000000 --hidden-size 256 --normalize-observations --squash-action-mean --rollout-steps 64 --n-envs 12
 python evaluate_required_actor_critic_hopper.py
 python render_required_actor_critic_hopper.py
 ```
 
-The second training command runs the tuned rollout Actor-Critic configuration
-used for the submitted model and render.
+The `python train.py` command runs the report-matching vanilla REINFORCE and
+Actor-Critic experiments and writes the submitted Part 1 model, CSV files, and
+learning-curve figure.
 
 Main outputs:
 
@@ -42,6 +70,7 @@ python train_sb3.py --algo ppo --env-type source --sampling-strategy none --time
 python train_sb3.py --algo ppo --env-type target --sampling-strategy none --timesteps 200000
 python train_sb3.py --algo sac --env-type source --sampling-strategy none --timesteps 200000
 python train_sb3.py --algo sac --env-type target --sampling-strategy none --timesteps 200000
+python train_sb3.py --algo sac --env-type target --sampling-strategy none --timesteps 500000 --quiet
 python train_sb3.py --algo sac --env-type target --sampling-strategy none --timesteps 120000 --load-model-path models/sac_push_none_target_260k_lr0p0003_g0p95_buf100000_b256_fixed_seed42.zip --run-name sac_push_none_target_380k_lr0p0003_g0p95_buf100000_b256_fixed_seed42 --quiet
 python eval_sb3.py --model-path models/MODEL_NAME.zip --env-type target --episodes 50 --save-csv
 ```
@@ -51,8 +80,8 @@ implementations with UDR and ADR:
 
 ```bash
 cd part2
-python train_sb3.py --algo ppo --env-type source --sampling-strategy udr --timesteps 200000
-python train_sb3.py --algo ppo --env-type source --sampling-strategy adr --timesteps 200000
+python train_sb3.py --algo ppo --env-type source --sampling-strategy udr --timesteps 200000 --learning-rate 0.0001
+python train_sb3.py --algo ppo --env-type source --sampling-strategy adr --timesteps 200000 --learning-rate 0.0001
 python train_sb3.py --algo sac --env-type source --sampling-strategy udr --timesteps 200000 --mass-min 0.5 --mass-max 5.0 --run-name sac_push_udr_source_200k_lr0p0003_g0p95_buf100000_b256_m0p5-5p0_seed0 --quiet
 python train_sb3.py --algo sac --env-type source --sampling-strategy adr --timesteps 200000 --mass-min 0.5 --adr-max-limit 5.0 --adr-initial-min 0.8 --adr-initial-max 1.2 --adr-step 0.3 --adr-success-threshold 0.25 --adr-window-size 10 --run-name sac_push_adr_source_200k_lr0p0003_g0p95_buf100000_b256_init0p8-1p2_lim0p5-5p0_step0p3_thr0p25_win10_seed0 --quiet
 python plot_results.py
@@ -67,6 +96,9 @@ Main outputs:
 - `part2/results/lower_upper_success_barplot.png`
 - `renders/part2_sac_target_380k_seed51_start_finish.png`
 - `renders/part2_sac_udr_source_200k_target_seed53_start_finish.png`
+
+New Part 2 training runs also save a `*_metadata.json` file next to each model
+checkpoint with the command, seed, hyperparameters, and package versions.
 
 ## Report Assets
 

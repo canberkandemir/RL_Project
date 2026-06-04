@@ -1,11 +1,16 @@
 """Systematic Part 1 experiments: REINFORCE and Actor-Critic on Hopper-v4."""
 
 import argparse
+import json
 import os
+import sys
 import time
 import random
 
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
 import gymnasium as gym
+import mujoco
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -19,6 +24,51 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+
+    if torch.backends.cudnn.is_available():
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+
+
+def reset_env(env, seed: int):
+    env.action_space.seed(seed)
+    env.observation_space.seed(seed)
+    return env.reset(seed=seed)
+
+
+def get_runtime_versions():
+    return {
+        "python_version": sys.version.split()[0],
+        "gymnasium_version": gym.__version__,
+        "mujoco_version": mujoco.__version__,
+        "numpy_version": np.__version__,
+        "torch_version": torch.__version__,
+    }
+
+
+def print_runtime_versions():
+    versions = get_runtime_versions()
+    version_text = ", ".join(f"{name}={value}" for name, value in versions.items())
+    print("Runtime versions:", version_text)
+
+
+def save_run_metadata(args, output_path):
+    metadata = {
+        "argv": sys.argv,
+        "cwd": os.getcwd(),
+        "args": vars(args),
+        "runtime_versions": get_runtime_versions(),
+    }
+
+    parent_dir = os.path.dirname(output_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
+        f.write("\n")
 
 
 def moving_average(values, window=10):
@@ -82,6 +132,7 @@ def train_agent(
     print("State dimension:", state_space)
     print("Action dimension:", action_space)
     print("Seed:", seed)
+    print_runtime_versions()
     print("======================================")
 
     policy = Policy(
@@ -114,7 +165,7 @@ def train_agent(
     start_time = time.time()
 
     for episode in range(n_episodes):
-        state, info = env.reset(seed=seed + episode)
+        state, info = reset_env(env, seed + episode)
         done = False
         total_reward = 0.0
         steps = 0
@@ -237,7 +288,7 @@ def evaluate_actor_critic_policy(policy, episodes=3, seed=10_000, deterministic=
     policy.eval()
 
     for episode in range(episodes):
-        state, info = env.reset(seed=seed + episode)
+        state, info = reset_env(env, seed + episode)
         terminated = False
         truncated = False
         total_reward = 0.0
@@ -325,7 +376,7 @@ def train_actor_critic_rollout(
     current_lengths = np.zeros(n_envs, dtype=np.int32)
 
     for env_index, env in enumerate(envs):
-        state, info = env.reset(seed=seed + env_index)
+        state, info = reset_env(env, seed + env_index)
         states.append(state)
         episode_start_x.append(float(env.unwrapped.data.qpos[0]))
 
@@ -350,6 +401,7 @@ def train_actor_critic_rollout(
     print("Total timesteps:", total_timesteps)
     print("Parallel environments:", n_envs)
     print("Rollout steps:", rollout_steps)
+    print_runtime_versions()
     print("======================================")
 
     while total_steps < total_timesteps:
@@ -389,7 +441,7 @@ def train_actor_critic_rollout(
                     episode_x_deltas.append(float(end_x - episode_start_x[env_index]))
                     episode_lengths.append(int(current_lengths[env_index]))
 
-                    next_state, info = env.reset(seed=seed + total_steps + env_index + 1)
+                    next_state, info = reset_env(env, seed + total_steps + env_index + 1)
                     episode_start_x[env_index] = float(env.unwrapped.data.qpos[0])
                     current_rewards[env_index] = 0.0
                     current_lengths[env_index] = 0
@@ -540,6 +592,10 @@ def main():
     args = parse_args()
     n_episodes = args.episodes
     seed = args.seed
+    runtime_versions = get_runtime_versions()
+    metadata_path = f"{args.output_prefix}_run_metadata.json"
+    save_run_metadata(args, metadata_path)
+    print("Saved run metadata:", metadata_path)
 
     if args.algorithm == "actor_critic" and args.actor_critic_mode == "rollout":
         result = train_actor_critic_rollout(
@@ -578,6 +634,7 @@ def main():
             "best_reward": result["best_reward"],
             "best_x_delta": result["best_x_delta"],
             "elapsed_time_sec": result["elapsed_time"],
+            **runtime_versions,
         }])
         summary_path = f"{args.output_prefix}_summary.csv"
         if os.path.exists(summary_path):
@@ -649,6 +706,7 @@ def main():
             "best_reward": result["best_reward"],
             "best_x_delta": result["best_x_delta"],
             "elapsed_time_sec": result["elapsed_time"],
+            **runtime_versions,
         })
 
     results_df = pd.DataFrame({

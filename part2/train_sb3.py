@@ -1,10 +1,15 @@
 import argparse
+import json
 import os
 import random
+import sys
+
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import gymnasium as gym
 import numpy as np
 import panda_gym  # required so PandaPush-v3 is registered
+import stable_baselines3 as sb3
 import torch
 
 from stable_baselines3 import PPO, SAC
@@ -22,6 +27,47 @@ def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+
+    if torch.backends.cudnn.is_available():
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+
+
+def reset_env(env, seed: int):
+    env.action_space.seed(seed)
+    env.observation_space.seed(seed)
+    return env.reset(seed=seed)
+
+
+def get_runtime_versions() -> dict:
+    return {
+        "python_version": sys.version.split()[0],
+        "gymnasium_version": gym.__version__,
+        "numpy_version": np.__version__,
+        "torch_version": torch.__version__,
+        "stable_baselines3_version": sb3.__version__,
+        "panda_gym_version": getattr(panda_gym, "__version__", "local"),
+    }
+
+
+def save_training_metadata(args, run_name: str, save_name: str) -> str:
+    metadata_path = f"{save_name}_metadata.json"
+    metadata = {
+        "argv": sys.argv,
+        "cwd": os.getcwd(),
+        "run_name": run_name,
+        "model_path": f"{save_name}.zip",
+        "args": vars(args),
+        "runtime_versions": get_runtime_versions(),
+    }
+
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+    return metadata_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -222,8 +268,6 @@ def main() -> None:
         reward_type="dense",
     )
 
-    env.reset(seed=args.seed)
-
     if args.sampling_strategy != "none":
         env = RandomizationWrapper(
             env,
@@ -236,9 +280,11 @@ def main() -> None:
             adr_success_threshold=args.adr_success_threshold,
             adr_window_size=args.adr_window_size,
             verbose=args.print_masses,
+            seed=args.seed,
         )
 
     env = Monitor(env)
+    reset_env(env, args.seed)
 
     os.makedirs("models", exist_ok=True)
     os.makedirs("tb_logs", exist_ok=True)
@@ -327,6 +373,8 @@ def main() -> None:
     else:
         raise ValueError("Unknown algorithm. Use 'ppo' or 'sac'.")
 
+    model.set_random_seed(args.seed)
+
     print("\nTraining configuration")
     print("Run name:", run_name)
     print("Algorithm:", args.algo)
@@ -410,10 +458,12 @@ def main() -> None:
     )
 
     model.save(save_name)
+    metadata_path = save_training_metadata(args, run_name, save_name)
     env.close()
 
     print("\nTraining finished")
     print(f"Saved model to: {save_name}.zip")
+    print(f"Saved metadata to: {metadata_path}")
 
     if wandb_run is not None:
         wandb_run.finish()

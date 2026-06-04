@@ -11,6 +11,12 @@ import panda_gym  # required so PandaPush-v3 is registered
 from stable_baselines3 import PPO, SAC
 
 
+def reset_env(env, seed: int):
+    env.action_space.seed(seed)
+    env.observation_space.seed(seed)
+    return env.reset(seed=seed)
+
+
 def load_model(model_path: str, env=None):
     lower_path = model_path.lower()
 
@@ -75,6 +81,7 @@ def append_results_to_csv(
     env_type: str,
     eval_mass,
     n_episodes: int,
+    seed: int,
     deterministic: bool,
     mean_return: float,
     std_return: float,
@@ -96,6 +103,7 @@ def append_results_to_csv(
         "env_type",
         "eval_mass",
         "episodes",
+        "seed",
         "deterministic",
         "mean_return",
         "std_return",
@@ -114,6 +122,7 @@ def append_results_to_csv(
         "env_type": env_type,
         "eval_mass": "" if eval_mass is None else eval_mass,
         "episodes": n_episodes,
+        "seed": seed,
         "deterministic": deterministic,
         "mean_return": mean_return,
         "std_return": std_return,
@@ -171,7 +180,7 @@ def evaluate(
     object_moves = []
 
     for episode in range(1, n_episodes + 1):
-        obs, info = env.reset(seed=seed + episode - 1)
+        obs, info = reset_env(env, seed + episode - 1)
         start_achieved_goal = np.array(obs["achieved_goal"], dtype=np.float32)
         desired_goal = np.array(obs["desired_goal"], dtype=np.float32)
         start_distance = float(np.linalg.norm(start_achieved_goal - desired_goal))
@@ -274,6 +283,7 @@ def evaluate(
             env_type=env_type,
             eval_mass=eval_mass,
             n_episodes=n_episodes,
+            seed=seed,
             deterministic=deterministic,
             mean_return=mean_return,
             std_return=std_return,
